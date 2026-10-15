@@ -19,11 +19,13 @@ flowchart TD
   WAIT -->|Poll same SQLite queue| CLAIM
   WAIT -->|Run closed / no future work| EXIT[Idle Chat exits]
   SNAP -->|Yes| RESTORE[Materialize dependencies; snapshot old HEAD, index and nonignored task files]
-  RESTORE -->|Consistent and conflict-free| NAME[Read registered worker name; print Project-workerN]
+  RESTORE -->|Consistent and conflict-free; symlinks rebased| NAME[Read registered worker name; print Project-workerN]
   RESTORE -->|Unsafe/conflicting| HOLD[Keep task claimed; preserve both worktrees for manual reconciliation]
   SNAP -->|No| NAME
   NAME --> ISOIN[Existing Codex Loop Logical Isolation: new bound context per Slot]
-  ISOIN -->|Semantic read-only or writable task| TASK[Execute current Slot; commit result]
+  ISOIN -->|Full Slot instructions; read-only review or writable task| TASK[Execute current Slot; commit result]
+  ISOIN -->|Entry failed after SQLite claim| REENTRY[Keep claim intact; retry same Run/task_id]
+  REENTRY --> ISOIN
   TASK --> REV[Worker publishes atomic task batch / Pool or revises waiting work]
   REV --> Q
   CLAIM --> LEASE[10 minute observable activity lease]
@@ -35,7 +37,7 @@ flowchart TD
   LATE --> HALT
   TASK --> FIN[collab finish unlocks dependent tasks]
   FIN --> ISOCLOSE[Auto-close writable Slot; read-only needs isolate-finish; strict semantic needs semantic-work-finish]
-  ISOCLOSE -->|finish.continue_now| ISOIN
+  ISOCLOSE -->|finish.continue_now or idempotent retry with complete next_task| ISOIN
   FIN -->|No task; not Integrator; no blocker| WAIT
   FIN --> DONE{All DAG tasks and delegations complete?}
   DONE -->|No| Q
