@@ -1,7 +1,7 @@
 interface:
   display_name: Thread Development Orchestrator
-  short_description: Plan all dev waves once, then activate prewritten stages with
-    verified handoffs and short launch prompts.
+  short_description: Adapt Local task pools and safely recover workers; preserve
+    frozen Web waves and verified handoffs.
   icon_small: assets/icon.svg
   icon_large: assets/icon.svg
 policy:
