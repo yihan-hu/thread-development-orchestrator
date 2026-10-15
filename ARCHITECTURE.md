@@ -22,7 +22,8 @@ flowchart TD
   RESTORE -->|Consistent and conflict-free| NAME[Read registered worker name; print Project-workerN]
   RESTORE -->|Unsafe/conflicting| HOLD[Keep task claimed; preserve both worktrees for manual reconciliation]
   SNAP -->|No| NAME
-  NAME --> TASK[Execute task in its own worktree; commit result]
+  NAME --> ISOIN[Existing Codex Loop Logical Isolation: new bound context per Slot]
+  ISOIN -->|Semantic read-only or writable task| TASK[Execute current Slot; commit result]
   TASK --> REV[Worker publishes atomic task batch / Pool or revises waiting work]
   REV --> Q
   CLAIM --> LEASE[10 minute observable activity lease]
@@ -33,7 +34,8 @@ flowchart TD
   RECLAIM -. original verified late finish .-> LATE[First accepted verified result wins if successor unfinished]
   LATE --> HALT
   TASK --> FIN[collab finish unlocks dependent tasks]
-  FIN -->|continue_now: next_task already claimed| TASK
+  FIN --> ISOCLOSE[Auto-close writable Slot; read-only needs isolate-finish; strict semantic needs semantic-work-finish]
+  ISOCLOSE -->|finish.continue_now| ISOIN
   FIN -->|No task; not Integrator; no blocker| WAIT
   FIN --> DONE{All DAG tasks and delegations complete?}
   DONE -->|No| Q
