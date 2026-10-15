@@ -1,0 +1,49 @@
+# Thread Development Orchestrator Architecture
+
+```mermaid
+flowchart TD
+  A[User objective, scope, authorizations] --> R[Resolve same execution environment and source]
+  R --> INV[Bounded workload/source inventory and source-baseline preflight]
+  INV --> SH[Prefer small meaningful disjoint shards for repeatable work]
+  SH --> DAG[Initial dependency and ownership checks]
+  DAG --> P[Register initial task graph and source contract]
+  P --> D{Environment}
+  D -->|Local| L[Persist PLAN.md and one complete objective.tasks.json + hashes outside repository]
+  D -->|Web| W[Freeze all Web waves/lane definitions and SOURCE_BASE_READY]
+  L --> S[One Codex Loop Run with stable task keys, logical pools and depends_on edges]
+  S --> CH[Launch K authorized Chats with identical RUN launcher]
+  CH --> Q[Global SQLite Ready Queue: fairness and eligible worker filtering]
+  Q --> CLAIM[Atomic claim and reuse same Chat task_id/worktree]
+  CLAIM --> NAME[Read existing worker registration in SQLite; print stable Project-workerN]
+  NAME --> TASK[Execute task; materialize verified predecessors; commit receipt]
+  TASK --> REV[Worker proposes atomic DAG update or independent review task]
+  REV --> Q
+  CLAIM --> LEASE[10 minute observable activity lease]
+  LEASE -->|Expired, checked safe| RECLAIM[Revoke generation, preserve old worktree]
+  RECLAIM --> Q
+  TASK --> FIN[collab finish unlocks dependent tasks]
+  FIN -->|continue_now: next_task| CLAIM
+  FIN -->|No ready task for this Chat| IDLE[This Chat exits; other active Chats continue]
+  FIN --> DONE{All DAG tasks and delegations complete?}
+  DONE -->|No| Q
+  DONE -->|Yes| INT[Last finisher integrates own task deltas in dependency order]
+  INT --> VALID[Stage-appropriate final tests + integration-complete]
+  VALID --> TAIL{Prewritten post-integration serial tail?}
+  TAIL -->|Yes| SER[Same Chat executes all gates and serial-complete]
+  TAIL -->|No| F[Final acceptance/release]
+  SER --> F
+  W --> WEB[Web lanes and verified Drive handoffs]
+  WEB --> WEBINT[Web Integration executes predefined serial stages, activates next frozen physical wave]
+  WEBINT -->|Next physical wave| WEB
+  WEBINT -->|Final acceptance| F
+```
+
+## Authority and data flow
+
+- The coordinator performs a bounded inventory, then **defaults to small useful shards** for repeatable work (documents, generation, revisions, batch QA, independent tests). A shard has a fixed input subset, exclusive output/receipt, meaningful work and independent retry. It avoids giant per-author/project jobs, but also avoids trivial or speculative empty tasks whose handoffs dominate. Source-shard completion should release its own downstream generation/review rather than waiting for unrelated authors or files.
+- The coordinator owns the **initial planned graph**: stable task identities, logical Pool names, true prerequisite edges, resource/exclusive-write boundaries, source contracts, exact acceptance/test gates and legitimate rework branches. Calling the Skill for orchestration creates the Run after checks and freeze, without a separate approval gate. An already open same-goal Run is inspected first, rather than silently duplicated. A Pool is a fairness grouping, never a hard concurrency reservation or a Wave-wide gate.
+- Local initial task definitions and PLAN hashes live on the authorized host outside target Git worktrees; the live SQLite graph can be atomically amended for unclaimed tasks. The complete task file is passed once to Codex Loop `collab create`; SQLite owns current ready/claimed/completed task state and dispatch fairness, Git owns code history. A completed task's verified own commit range can be safely materialized into another worker's isolated checkout before it begins downstream work.
+- After its first successful Local claim, the Chat queries the existing host-local SQLite `workers` registrations read-only. Its order within that Run determines `<RepoDirectory>-worker<N>`; the assistant prints this name immediately in user-visible chat text. No new registry, schema change, individualized Launcher or Codex Loop runtime code is needed. A Chat keeps the name on later claims and resumption.
+- Every active Chat retains its own lifecycle `task_id` and worktree while automatically claiming further Ready tasks. The next task is returned by `collab finish`, not by a coordinator polling loop. Stale leases can be reclaimed after 600 seconds without observable tool activity, with process/Git checks and owner-generation fencing; closed Chats are not awakened; a pool with Ready work receives priority at the **next active claim** and may borrow all idle capacity without limits.
+- Final integration starts only after every required task and tracked delegation is resolved, not after an arbitrary Wave. Commit deltas are integrated in DAG order, avoiding duplicated imported prerequisites. A post-integration serial chain belongs to the elected Integrator in the same Chat until its real gates complete.
+- Web lacks shared host-local SQLite and retains frozen physical waves, Drive-backed verified handoffs, and an explicit Integration lane. A Web lane must not claim Local DAG scheduling capabilities. Authorization never transfers between Chats; failure recovery never steals a claimed worktree or replays ambiguous writes.

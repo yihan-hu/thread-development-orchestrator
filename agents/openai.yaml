@@ -1,0 +1,13 @@
+interface:
+  display_name: Thread Development Orchestrator
+  short_description: Plan all dev waves once, then activate prewritten stages with
+    verified handoffs and short launch prompts.
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true
