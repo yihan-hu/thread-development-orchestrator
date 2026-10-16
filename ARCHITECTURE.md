@@ -14,6 +14,9 @@ flowchart TD
   S --> CH[Launch K authorized Chats with identical RUN launcher]
   CH --> Q[Global SQLite Ready Queue: fairness and eligible worker filtering]
   Q --> CLAIM[Atomic claim and reuse same Chat task_id/worktree]
+  TASK -->|Resource busy before any work| RB[Verify clean Slot; abort matching isolation; requeue]
+  RB --> LC[Learn current peer occupancy; cooldown if zero active]
+  LC --> Q
   CLAIM -->|Eligible Ready task| SNAP{Reclaimed assignment?}
   CLAIM -->|No eligible Ready task| WAIT[Bounded foreground wait with separate idle-worker heartbeat every 30s]
   WAIT -->|Poll same SQLite queue| CLAIM
