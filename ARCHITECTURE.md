@@ -11,6 +11,11 @@ flowchart TD
   D -->|Local| L[Persist PLAN.md and one complete objective.tasks.json + hashes outside repository]
   D -->|Web| W[Freeze all Web waves/lane definitions and SOURCE_BASE_READY]
   L --> S[One Codex Loop Run with stable task keys, logical pools and depends_on edges]
+  L --> GINIT[Concise initial goal and durable decisions via guidance-file]
+  GINIT --> DEC
+  S --> DEC[SQLite Run-wide current decisions and graph revision]
+  S --> EDIT[Explicitly authorized Run Editor Chat without Worker Slot]
+  EDIT --> CONTEXT[Read current Run decisions before publish/revise]
   S --> CH[Launch K authorized Chats with identical RUN launcher]
   CH --> Q[Global SQLite Ready Queue: fairness and eligible worker filtering]
   Q --> PICK{One atomic snapshot: Ready + stale leases >=600s, Pool and dependency fairness}
@@ -30,12 +35,19 @@ flowchart TD
   RESTORE -->|Consistent and conflict-free; symlinks rebased| NAME[Read registered worker name; print Project-workerN]
   RESTORE -->|Unsafe/conflicting| HOLD[Keep task claimed; preserve both worktrees for manual reconciliation]
   SNAP -->|No| NAME
-  NAME --> ISOIN[Existing Codex Loop Logical Isolation: new bound context per Slot]
+  DEC --> FULL[Current Run decisions prepended to claimed task instructions]
+  NAME --> FULL
+  FULL --> ISOIN[Existing Codex Loop Logical Isolation: new bound context per Slot]
   ISOIN -->|Full Slot instructions; read-only review or writable task| TASK[Execute current Slot; commit result]
   ISOIN -->|Entry failed after SQLite claim| REENTRY[Keep claim intact; retry same Run/task_id]
   REENTRY --> ISOIN
-  TASK --> REV[Worker publishes atomic task batch / Pool or revises waiting work]
+  TASK -->|Only if publishing| CONTEXT
+  CONTEXT --> REV[Atomic publish/revise: Worker lease or authorized Run Editor; check current graph revision]
   REV --> Q
+  EDIT --> CHANGE[Replace Run decisions on user instruction]
+  TASK -->|User instruction changes policy| CHANGE
+  CHANGE --> DEC
+  CHANGE --> TOOL
   CLAIM --> LEASE[10 minute observable activity lease]
   LEASE --> TOOL[Scoped MCP call checks inbox and refreshes last_seen at most every 60 seconds]
   TOOL -->|STOP message| HALT[Stop newer Worker on next call; preserve its local output]
@@ -67,6 +79,7 @@ flowchart TD
 
 - The coordinator performs a bounded inventory, then **defaults to small useful shards** for repeatable work (documents, generation, revisions, batch QA, independent tests). A shard has a fixed input subset, exclusive output/receipt, meaningful work and independent retry. It avoids giant per-author/project jobs, but also avoids trivial or speculative empty tasks whose handoffs dominate. Source-shard completion should release its own downstream generation/review rather than waiting for unrelated authors or files.
 - The coordinator owns the **initial planned graph**: stable task identities, logical Pool names, true prerequisite edges, resource/exclusive-write boundaries, source contracts, exact acceptance/test gates and legitimate rework branches. Calling the Skill for orchestration creates the Run after initial source checks and registration, without a separate approval gate. An already open same-goal Run is inspected first, rather than silently duplicated. A Pool is a fairness grouping, never a hard concurrency reservation or a Wave-wide gate.
+- At Run creation, a short guidance-file initializes the actual goal and enduring user decisions in SQLite; the original PLAN remains the verified source baseline. Local Run-wide guidance then lives in the same SQLite registry as the DAG, independent of the original immutable PLAN. Both Slot-owning Workers and explicitly admitted non-Slot Run Editors may revise it or the available task graph. Publication always reads current guidance and uses an expected graph revision; claimed Workers receive updated decisions through the existing inbox. Claimed task instructions include current guidance without separate Worker reads.
 - Local initial task definitions and PLAN hashes live on the authorized host outside target Git worktrees; the live SQLite graph can be atomically amended for unclaimed tasks. The complete task file is passed once to Codex Loop `collab create`; SQLite owns current ready/claimed/completed task state and dispatch fairness, Git owns code history. A completed task's verified own commit range can be safely materialized into another worker's isolated checkout before it begins downstream work.
 - After its first successful Local claim, the Chat queries the existing host-local SQLite `workers` registrations read-only. Its order within that Run determines `<RepoDirectory>-worker<N>`; the assistant prints this name immediately in user-visible chat text. Worker naming needs no extra registry or individualized launcher; Codex Loop registers stable worker ownership in its existing SQLite store. A Chat keeps the name on later claims and resumption.
 - Every active Chat retains its own lifecycle `task_id` and worktree while automatically claiming further Ready tasks. An immediately Ready next task is returned by `collab finish`; otherwise the same Chat uses bounded `collab claim --wait` foreground calls (default check interval 30 seconds; separate idle heartbeat; no claimed Slot or lease renewal). Scoped MCP hooks can observe tool activity and urgent inbox/control messages before each tool call, rate-limiting SQLite writes to once per 60 seconds when installed; otherwise workers report explicit heartbeats. Stale leases become eligible after 600 seconds without tool activity. At 1800 seconds eligible stale work outranks Ready; before then, a stalled all-stale dependency fan-in may outrank Ready if it blocks a less-served Pool. Otherwise Ready wins. Resource ceilings allow replacing expired leases when functioning workers leave capacity, including after a cap reduction, with worker-owned Worktree isolation, recovery evidence and owner-generation fencing; resume from the old worker's verified Git/file state without requiring checkpoints; ignored files and uncertain external effects still need review; closed Chats are not awakened; a Pool with Ready work gets normal preference at active claims, except for priority takeover after 30 minutes or rescue of an all-stale fan-in blocking a less-served Pool; idle workers remain shareable.
