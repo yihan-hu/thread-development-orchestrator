@@ -33,20 +33,31 @@ flowchart TD
   WAIT -->|Run closed / no future work| EXIT[Idle Chat exits]
   SNAP -->|Yes| RESTORE[Materialize dependencies; snapshot old HEAD, index and nonignored task files]
   RESTORE -->|Consistent and conflict-free; symlinks rebased| NAME[Read registered worker name; print Project-workerN]
-  RESTORE -->|Unsafe/conflicting| HOLD[Keep task claimed; preserve both worktrees for manual reconciliation]
+  RESTORE -->|Unsafe/conflicting| HOLD[Keep task claimed; preserve both worktrees for diagnosis and authorized reconciliation]
   SNAP -->|No| NAME
   DEC --> FULL[Current Run decisions prepended to claimed task instructions]
   NAME --> FULL
   FULL --> ISOIN[Existing Codex Loop Logical Isolation: new bound context per Slot]
-  ISOIN -->|Full Slot instructions; read-only review or writable task| TASK[Execute current Slot; commit result]
+  ISOIN -->|Full Slot instructions; read-only review or writable task| TASK[Execute current Slot]
   ISOIN -->|Entry failed after SQLite claim| REENTRY[Keep claim intact; retry same Run/task_id]
   REENTRY --> ISOIN
-  TASK -->|Only if publishing| CONTEXT
+  TASK --> CHECK[Producer self-review, relevant checks and repair in same task]
+  CHECK -->|Known defect with feasible remedy| TASK
+  CHECK -->|No known actionable defect| HANDOFF[Commit result and explicit acceptance outcome]
+  FIN -->|Required independent review task becomes ready| REVIEW[Scoped independent review in its assigned Slot]
+  REVIEW -->|Valid defect| DIAG
+  REVIEW -->|Review completed with explicit outcome| HANDOFF
+  TASK -->|Obstacle| DIAG[Diagnose root cause, new method and affected decision]
+  DIAG -->|Authorized remedy| TASK
+  DIAG -->|Concrete separable follow-up| CONTEXT
+  DIAG -->|No feasible authorized route| DECIDE[Recommend exact decision; preserve partial work and continue unaffected tasks]
+  DECIDE -->|User decision| CHANGE
   CONTEXT --> REV[Atomic publish/revise: Worker lease or authorized Run Editor; check current graph revision]
   REV --> Q
   EDIT --> CHANGE[Replace Run decisions on user instruction]
   TASK -->|User instruction changes policy| CHANGE
-  CHANGE --> DEC
+  CHANGE --> SCOPE[Update affected available dependencies and result paths; notify claimed owners]
+  SCOPE --> DEC
   CHANGE --> TOOL
   CLAIM --> LEASE[10 minute observable activity lease]
   LEASE --> TOOL[Scoped MCP call checks inbox and refreshes last_seen at most every 60 seconds]
@@ -55,7 +66,7 @@ flowchart TD
   RECLAIM -->|Recovered claim| SNAP
   RECLAIM -. original verified late finish .-> LATE[First accepted verified result wins if successor unfinished]
   LATE --> HALT
-  TASK --> FIN[collab finish unlocks dependent tasks]
+  HANDOFF --> FIN[collab finish makes dependencies materializable; consumer checks acceptance]
   FIN --> ISOCLOSE[Auto-close writable Slot; read-only needs isolate-finish; strict semantic needs semantic-work-finish]
   ISOCLOSE -->|finish.continue_now or idempotent retry with complete next_task| ISOIN
   FIN -->|No task; not Integrator; no blocker| WAIT
@@ -85,3 +96,7 @@ flowchart TD
 - Every active Chat retains its own lifecycle `task_id` and worktree while automatically claiming further Ready tasks. An immediately Ready next task is returned by `collab finish`; otherwise the same Chat uses bounded `collab claim --wait` foreground calls (default check interval 30 seconds; separate idle heartbeat; no claimed Slot or lease renewal). Scoped MCP hooks can observe tool activity and urgent inbox/control messages before each tool call, rate-limiting SQLite writes to once per 60 seconds when installed; otherwise workers report explicit heartbeats. Stale leases become eligible after 600 seconds without tool activity. At 1800 seconds eligible stale work outranks Ready; before then, a stalled all-stale dependency fan-in may outrank Ready if it blocks a less-served Pool. Otherwise Ready wins. Resource ceilings allow replacing expired leases when functioning workers leave capacity, including after a cap reduction, with worker-owned Worktree isolation, recovery evidence and owner-generation fencing; resume from the old worker's verified Git/file state without requiring checkpoints; ignored files and uncertain external effects still need review; closed Chats are not awakened; a Pool with Ready work gets normal preference at active claims, except for priority takeover after 30 minutes or rescue of an all-stale fan-in blocking a less-served Pool; idle workers remain shareable.
 - Final integration starts only after every required task and tracked delegation is resolved, not after an arbitrary Wave. Commit deltas are integrated in DAG order, avoiding duplicated imported prerequisites. A post-integration serial chain belongs to the elected Integrator in the same Chat until its real gates complete.
 - Web lacks shared host-local SQLite and retains frozen physical waves, Drive-backed verified handoffs, and an explicit Integration lane. A Web lane must not claim Local DAG scheduling capabilities. Authorization never transfers between Chats; failure recovery preserves previous worktrees and never blindly replays ambiguous writes.
+
+- Producers self-review actual outputs and repair known defects inside the existing task before handoff. Independent review is conditional on an explicit requirement or concrete judgment need, and rechecks only affected findings unless wider invalidation is demonstrated.
+- The current acceptance contract bounds review. Each blocker names its protected decision; only genuine shared constraints create global fan-in. Evidence and access permissions must be compatible before dispatch. Repeated unchanged failure leads to diagnosis and a recommended decision, not automatic task publication.
+- Execution completion does not imply scientific or deployment approval. Replacement acceptance results explicitly supersede prior verdicts for a stated scope; available consumer dependencies and result paths change together, while claimed owners receive supported steering without lease/worktree overwrite.
